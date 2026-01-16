@@ -1,11 +1,12 @@
-import React from "react";
+"use client";
+import React, { useState } from "react";
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
   InputGroupTextarea,
 } from "@/components/ui/input-group";
-import { Send } from "lucide-react";
+import { Loader2, Send } from "lucide-react";
 
 import {
   Select,
@@ -17,8 +18,38 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { QUICK_VIDEO_SUGGESTIONS } from "@/data/constant";
+import axios from "axios";
+import { toast } from "sonner";
+import { SignInButton, useUser } from "@clerk/nextjs";
 
 const Hero = () => {
+  const [userInput, setUserInput] = useState("");
+  const [type, setType] = useState("full-course");
+  const [loading, setLoading] = useState(false);
+  const { user } = useUser();
+
+  const GenerateCourseLayout = async () => {
+    const toastId = toast.loading("Generating your course layout...");
+    const courseId = await crypto.randomUUID();
+    try {
+      setLoading(true);
+
+      const result = await axios.post("/api/generate-course-layout", {
+        userInput,
+        type,
+        courseId: courseId,
+      });
+      console.log(result.data);
+      setLoading(false);
+      toast.success("Course layout generated succesfully!", { id: toastId });
+
+      //navigate to course editor page
+    } catch (e) {
+      setLoading(false);
+      toast.error("something went wrong. Please try again", { id: toastId });
+    }
+  };
+
   return (
     <div>
       <div className="flex items-center flex-col mt-20">
@@ -37,6 +68,8 @@ const Hero = () => {
               className="flex field-sizing-content min-h-24 w-full resize-none rounded-xl 
               bg-white px-3 py-2.5 text-base transition-[color,box-shadow] outline-none md:text-sm"
               placeholder="Autoresize textarea..."
+              value={userInput}
+              onChange={(e) => setUserInput(e.target.value)}
             />
             <InputGroupAddon align="block-end">
               <Select>
@@ -52,24 +85,44 @@ const Hero = () => {
                   </SelectGroup>
                 </SelectContent>
               </Select>
-              <InputGroupButton
-                className="ml-auto"
-                size="icon-sm"
-                variant="default"
-              >
-                <Send />
-              </InputGroupButton>
+              {user ? (
+                <InputGroupButton
+                  className="ml-auto"
+                  size="icon-sm"
+                  variant="default"
+                  onClick={GenerateCourseLayout}
+                  disabled={loading}
+                >
+                  {loading ? <Loader2 className="animate-spin" /> : <Send />}
+                </InputGroupButton>
+              ) : (
+                <SignInButton mode="modal">
+                  <InputGroupButton
+                    className="ml-auto"
+                    size="icon-sm"
+                    variant="default"
+                    onClick={GenerateCourseLayout}
+                    disabled={loading}
+                  >
+                    {loading ? <Loader2 className="animate-spin" /> : <Send />}
+                  </InputGroupButton>
+                </SignInButton>
+              )}
             </InputGroupAddon>
           </InputGroup>
         </div>
-         <div className="flex gap-5 mt-5 max-w-3xl flex-wrap justify-center z-10">
-        {QUICK_VIDEO_SUGGESTIONS.map((suggestion, index) => (
-            <h2 className="border rounded-2xl px-2 p-1 text-sm bg-white" key={index}>{suggestion.title}</h2>
-         
-        ))}
+        <div className="flex gap-5 mt-5 max-w-3xl flex-wrap justify-center z-10">
+          {QUICK_VIDEO_SUGGESTIONS.map((suggestion, index) => (
+            <h2
+              className="border rounded-2xl px-2 p-1 cursor-pointer text-sm bg-white"
+              key={index}
+              onClick={() => setUserInput(suggestion?.prompt)}
+            >
+              {suggestion.title}
+            </h2>
+          ))}
+        </div>
       </div>
-      </div>
-     
     </div>
   );
 };
