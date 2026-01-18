@@ -5,10 +5,11 @@ import Header from "./_components/Header";
 import Hero from "./_components/Hero";
 import CourseList from "./_components/CourseList";
 
+
 export default function Home() {
   return (
     <div>
-      <Header />
+
       <Hero />
       <CourseList />
       <div
