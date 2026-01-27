@@ -1,15 +1,38 @@
 import { db } from "@/config/db";
-import { coursesTable } from "@/config/schema";
+import { chapterContentSlides, coursesTable } from "@/config/schema";
 import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(req: NextRequest) {
-  const courseId = await req.nextUrl.searchParams.get("courseId");
+  const courseId = req.nextUrl.searchParams.get("courseId");
 
-  const courses = await db
-    .select()
-    .from(coursesTable)
-    .where(eq(coursesTable.courseId, courseId as string));
+  // 1. Guard clause: If no courseId is provided, don't even hit the DB
+  if (!courseId) {
+    return NextResponse.json({ error: "courseId is required" }, { status: 400 });
+  }
 
-  return NextResponse.json(courses[0]);
+  try {
+    const courses = await db
+      .select()
+      .from(coursesTable)
+      .where(eq(coursesTable.courseId, courseId));
+
+    // 2. Guard clause: If course doesn't exist
+    if (courses.length === 0) {
+      return NextResponse.json({ error: "Course not found" }, { status: 404 });
+    }
+
+    const chapterContentSlide = await db
+      .select()
+      .from(chapterContentSlides)
+      .where(eq(chapterContentSlides.courseId, courseId));
+
+    return NextResponse.json({
+      ...courses[0],
+      chapterContentSlides: chapterContentSlide,
+    });
+  } catch (error) {
+    console.error("Database Error:", error);
+    return NextResponse.json({ error: "Failed to fetch course data" }, { status: 500 });
+  }
 }
