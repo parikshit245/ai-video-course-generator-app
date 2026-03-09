@@ -1,7 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { genAI } from "@/lib/gemini";
 import { Course_config_prompt } from "@/data/Prompt";
-
+import { OpenAI } from "openai";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { db } from "@/config/db";
 import { coursesTable } from "@/config/schema";
@@ -18,19 +18,29 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
-      generationConfig: {
-        responseMimeType: "application/json",
-        temperature: 0.3,
-      },
-    });
+const client = new OpenAI({
+	baseURL: "https://router.huggingface.co/hf-inference/models/katanemo/Arch-Router-1.5B",
+	apiKey: (process.env.HF_API_KEY as string) ,
+});
 
-    const response = await model.generateContent(
-      Course_config_prompt + "\n\nCourse Topic is " + userInput
-    );
+const chatCompletion = await client.chat.completions.create({
+	model: "Qwen3.5-397B-A17B-FP8",
+    messages: Course_config_prompt + "\n\nCourse Topic is " + userInput,
+});
 
-    const rawResult = response.response.text();
+    // const model = genAI.getGenerativeModel({
+    //   model: "gemini-2.5-flash",
+    //   generationConfig: {
+    //     responseMimeType: "application/json",
+    //     temperature: 0.3,
+    //   },
+    // });
+
+    // const response = await model.generateContent(
+    //   Course_config_prompt + "\n\nCourse Topic is " + userInput
+    // );
+
+    const rawResult = chatCompletion.choices[0].message.content || "";
     const JSONResult = JSON.parse(rawResult);
 
     //save to DB
