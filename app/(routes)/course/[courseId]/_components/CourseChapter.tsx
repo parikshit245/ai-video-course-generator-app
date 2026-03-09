@@ -78,13 +78,20 @@ function CourseChapter({ course, durationBySlideId }: Props) {
                       <Player
                         className="border-2 border-white/10 rounded-2xl"
                         component={CourseComposition}
-                        durationInFrames={30}
+                        durationInFrames={Math.max(
+                          30,
+                          slides
+                            .filter((slide) => slide.chapterId === chapter.chapterId)
+                            .reduce(
+                              (sum, slide) => sum + (durationBySlideId[slide.slideId] ?? 180),
+                              0,
+                            ),
+                        )}
                         compositionWidth={1280}
                         compositionHeight={720}
                         fps={30}
                         controls
                         inputProps={{
-                          //@ts-ignore
                           slides: slides.filter(
                             (slide) => slide.chapterId === chapter.chapterId,
                           ),

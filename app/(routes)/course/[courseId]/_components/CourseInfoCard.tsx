@@ -70,9 +70,7 @@ function CourseInfoCard({ course, durationBySlideId }: Props) {
             <div className="w-full aspect-video rounded-2xl overflow-hidden shadow-2xl border border-white/10">
               <Player
                 component={CourseComposition}
-                durationInFrames={
-                  30
-                } // A sufficiently large number; ChapterVideo handles slide timing
+                durationInFrames={Math.max(30, durationInFrames ?? 30)}
                 compositionWidth={1280}
                 compositionHeight={720}
                 fps={fps}

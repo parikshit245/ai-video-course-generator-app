@@ -35,6 +35,5 @@ export type ChapterContentSlide = {
     fullText: string;
   };
   html: string;
-  audioData?: string | null;
   revealData: string[];
 };

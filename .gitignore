@@ -43,3 +43,6 @@ next-env.d.ts
 # Local audio storage (temporary test files)
 public/audio/*
 !public/audio/.gitkeep
+
+# Local fallback storage for offline DB development
+.local-data/

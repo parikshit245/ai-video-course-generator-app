@@ -2,11 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
 import { db } from "@/config/db";
 import { chapterContentSlides } from "@/config/schema";
-import { Video_SlidesDummy } from "@/data/Dummy";
-import { v4 as uuidv4 } from "uuid";
 import { genAI } from "@/lib/gemini";
+import { isDatabaseConnectionError, saveLocalSlides } from "@/lib/dbFallback";
 import { Generate_Video_Content_Prompt } from "@/data/Prompt";
-import { saveAudio, getStorageType } from "@/lib/audioStorage";
+import { saveAudio } from "@/lib/audioStorage";
+
+type GeneratedSlide = {
+  slideIndex: number;
+  slideId: string;
+  audioFileName: string;
+  narration?: unknown;
+  html?: string;
+  revealData?: unknown;
+};
 
 // ================= HELPER FUNCTIONS =================
 
@@ -45,7 +53,7 @@ export async function POST(req: NextRequest) {
 
   const VideoContentJson = JSON.parse(
     AiResponse?.replace("json", "").replace("", "") || "[]",
-  );
+  ) as GeneratedSlide[];
 
   // const VideoContentJson = Video_SlidesDummy;
   const audioFileUrls: Record<string, string> = {};
@@ -100,26 +108,49 @@ export async function POST(req: NextRequest) {
   }
 
   // ================= SAVE ALL SLIDES TO DATABASE =================
-  for (let index = 0; index < VideoContentJson.length; index++) {
-    const slide = VideoContentJson[index];
+  try {
+    for (let index = 0; index < VideoContentJson.length; index++) {
+      const slide = VideoContentJson[index];
 
-    const result = await db
-      .insert(chapterContentSlides)
-      .values({
-        chapterId: chapterId,
-        courseId: courseId,
+      await db
+        .insert(chapterContentSlides)
+        .values({
+          chapterId: chapterId,
+          courseId: courseId,
+          slideIndex: slide.slideIndex,
+          slideId: slide.slideId,
+          audioFileName: slide.audioFileName,
+          audioFileUrl: audioFileUrls[index] || "",
+          narration: slide.narration || {},
+          html: slide.html || "",
+          revealData: slide.revealData || [],
+        })
+        .returning();
+
+      console.log(`✓ Slide saved to DB: ${slide.slideId}`);
+    }
+  } catch (error) {
+    if (!isDatabaseConnectionError(error)) {
+      throw error;
+    }
+
+    console.warn(
+      "Database unavailable in /api/generate-video-content, saving locally",
+    );
+
+    await saveLocalSlides(
+      courseId,
+      chapterId,
+      VideoContentJson.map((slide, index) => ({
         slideIndex: slide.slideIndex,
         slideId: slide.slideId,
         audioFileName: slide.audioFileName,
         audioFileUrl: audioFileUrls[index] || "",
         narration: slide.narration || {},
         html: slide.html || "",
-        audioData: null, // Will be calculated on frontend from audio duration
         revealData: slide.revealData || [],
-      })
-      .returning();
-
-    console.log(`✓ Slide saved to DB: ${slide.slideId}`);
+      })),
+    );
   }
 
   return NextResponse.json({

@@ -1,5 +1,6 @@
 import { db } from "@/config/db";
 import { chapterContentSlides, coursesTable } from "@/config/schema";
+import { getLocalCourse, isDatabaseConnectionError } from "@/lib/dbFallback";
 import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -32,6 +33,21 @@ export async function GET(req: NextRequest) {
       chapterContentSlides: chapterContentSlide,
     });
   } catch (error) {
+    if (isDatabaseConnectionError(error)) {
+      console.warn("Database unavailable in /api/course, using local fallback");
+
+      const localCourse = await getLocalCourse(courseId);
+
+      if (localCourse) {
+        return NextResponse.json(localCourse);
+      }
+
+      return NextResponse.json(
+        { error: "Course not found in local fallback" },
+        { status: 404 },
+      );
+    }
+
     console.error("Database Error:", error);
     return NextResponse.json({ error: "Failed to fetch course data" }, { status: 500 });
   }

@@ -5,21 +5,7 @@ import {
   text,
   timestamp,
   varchar,
-  customType, // Import customType for Bytea
 } from "drizzle-orm/pg-core";
-
-const bytea = customType<{ data: Buffer }>({
-  dataType() {
-    return "bytea";
-  },
-  // Adding these methods helps Drizzle map the data correctly
-  toDriver(value: Buffer) {
-    return value;
-  },
-  fromDriver(value: unknown) {
-    return value as Buffer;
-  },
-});
 
 export const usersTable = pgTable("users", {
   id: integer().primaryKey().generatedAlwaysAsIdentity(),
@@ -53,6 +39,5 @@ export const chapterContentSlides = pgTable("chapter_content_slides", {
   audioFileUrl: varchar({ length: 1024 }).notNull(),
   narration: json().notNull(),
   html: text(),
-  audioData: varchar({ length: 1024 }),
-  revealData: json().notNull(),
+  revealData: json("revelData").notNull(),
 });
