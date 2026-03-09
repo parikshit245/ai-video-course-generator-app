@@ -19,9 +19,11 @@ import {
 } from "@/components/ui/select";
 import { QUICK_VIDEO_SUGGESTIONS } from "@/data/constant";
 import axios from "axios";
+import { AxiosError } from "axios";
 import { toast } from "sonner";
 import { SignInButton, useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
+import { v4 as uuidv4 } from "uuid";
 
 const Hero = () => {
   const [userInput, setUserInput] = useState("");
@@ -31,8 +33,14 @@ const Hero = () => {
   const router = useRouter();
 
   const GenerateCourseLayout = async () => {
+    if (!userInput.trim()) {
+      toast.error("Enter a topic first");
+      return;
+    }
+
     const toastId = toast.loading("Generating your course layout...");
-    const courseId = await crypto.randomUUID();
+    const courseId = globalThis.crypto?.randomUUID?.() ?? uuidv4();
+
     try {
       setLoading(true);
 
@@ -47,9 +55,16 @@ const Hero = () => {
 
       //navigate to course editor page
       router.push("/course/" + courseId);
-    } catch (e) {
+    } catch (error) {
       setLoading(false);
-      toast.error("something went wrong. Please try again", { id: toastId });
+
+      const message =
+        error instanceof AxiosError
+          ? error.response?.data?.error || error.message
+          : "Something went wrong. Please try again.";
+
+      console.error("Failed to generate course layout:", error);
+      toast.error(message, { id: toastId });
     }
   };
 
@@ -75,7 +90,7 @@ const Hero = () => {
               onChange={(e) => setUserInput(e.target.value)}
             />
             <InputGroupAddon align="block-end">
-              <Select>
+              <Select value={type} onValueChange={setType}>
                 <SelectTrigger className="">
                   <SelectValue placeholder="Full Course" />
                 </SelectTrigger>
