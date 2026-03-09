@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local audio storage (temporary test files)
+public/audio/*
+!public/audio/.gitkeep

@@ -40,7 +40,6 @@ User will provide course topic
 OUTPUT:
 Return ONLY the JSON object.`;
 
-
 export const Generate_Video_Content_Prompt = `
 You are an expert instructional designer and motion UI engineer.
 
@@ -108,4 +107,3 @@ OUTPUT VALIDATION:
 
 Now generate slides for the provided input.
 `;
-

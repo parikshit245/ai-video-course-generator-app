@@ -1,23 +1,43 @@
 import React from "react";
+
 import { Course } from "@/type/CourseType";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
 import { Dot } from "lucide-react";
+
 import { Player } from "@remotion/player";
-import ChapterVideo from "./ChapterVideo";
+import { CourseComposition } from "./ChapterVideo";
 
 type Props = {
   course: Course | undefined;
+  durationBySlideId: Record<string, number>;
 };
 
-function CourseChapter({ course }: Props) {
+function CourseChapter({ course, durationBySlideId }: Props) {
+  const slides = course?.chapterContentSlides ?? [];
+
+  const GetChapterDurationInFrame = (chapterId: string) => {
+    if (!durationBySlideId || !course) return 30;
+
+    return course?.chapterContentSlides
+      .filter((slide) => slide.chapterId === chapterId)
+      .reduce((sum, slide) => {
+        return sum + (durationBySlideId[slide.slideId] ?? 30);
+      }, 0);
+  };
+
   return (
     <div
       className="max-w-6xl -mt-5 p-10 border rounded-3xl shadow w-full
+
     bg-background/80 backdrop-blur
+
     "
     >
       <div className="flex justify-between items-center ">
         <h2 className="font-bold text-2xl">Course Preivew</h2>
+
         <h2 className="text-sm text-muted-foreground">
           Chapters and Short Preview
         </h2>
@@ -33,6 +53,7 @@ function CourseChapter({ course }: Props) {
                   <h2 className="p-2 bg-primary/60 inline-flex h-10 w-10 text-center rounded-2xl justify-center">
                     {index + 1}
                   </h2>
+
                   <CardTitle className="md:text-xl text-base">
                     {chapter.chapterTitle}
                   </CardTitle>
@@ -47,6 +68,7 @@ function CourseChapter({ course }: Props) {
                           className="flex gap-2 items-center mt-2"
                         >
                           <Dot className="h-5 w-5 text-primary" />
+
                           <h2>{content}</h2>
                         </div>
                       ))}
@@ -55,15 +77,21 @@ function CourseChapter({ course }: Props) {
                     <div>
                       <Player
                         className="border-2 border-white/10 rounded-2xl"
-                        component={ChapterVideo}
+                        component={CourseComposition}
                         durationInFrames={30}
                         compositionWidth={1280}
                         compositionHeight={720}
                         fps={30}
                         controls
+                        inputProps={{
+                          //@ts-ignore
+                          slides: slides.filter(
+                            (slide) => slide.chapterId === chapter.chapterId,
+                          ),
+                          durationsBySlideId: durationBySlideId??{},
+                        }}
                         style={{
-                          width: "80%",
-                          height: '180px',
+                          width: "100%",
                           aspectRatio: "16/9",
                         }}
                       />

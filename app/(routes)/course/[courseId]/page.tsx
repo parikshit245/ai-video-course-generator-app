@@ -1,61 +1,206 @@
 "use client";
-import React, { useEffect, useState } from "react";
+
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import CourseInfoCard from "./_components/CourseInfoCard";
+import CourseChapter from "./_components/CourseChapter";
 import axios from "axios";
 import { useParams } from "next/navigation";
 import { Course } from "@/type/CourseType";
-import CourseChapter from "./_components/CourseChapter";
 import { toast } from "sonner";
 
 function CoursePreview() {
   const { courseId } = useParams();
-  const [courseDetail, setCourseDetail] = useState<Course>();
 
-  useEffect(() => {
-    courseId && GetCourseDetail();
+  const [courseDetail, setCourseDetail] = useState<Course | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [durationBySlideId, setDurationBySlideId] = useState<
+    Record<string, number>
+  >({});
+  const [loading, setLoading] = useState(true);
+
+  const fps = 30;
+
+  // ===============================
+  // Fetch Course Details
+  // ===============================
+  const fetchCourseDetail = useCallback(async () => {
+    if (!courseId) return;
+
+    try {
+      const result = await axios.get("/api/course?courseId=" + courseId);
+
+      setCourseDetail(result.data);
+
+      return result.data;
+    } catch (error) {
+      console.error("Error fetching course:", error);
+      toast.error("Failed to load course details");
+    }
   }, [courseId]);
 
-  const GetCourseDetail = async () => {
-    const loadingToast = toast.loading("Loading Course Details...");
-    const result = await axios.get("/api/course?courseId=" + courseId);
-    console.log(result.data);
-    setCourseDetail(result.data);
-    toast.success("Course Details Loaded successfully!", { id: loadingToast });
-    if (result?.data?.chapterContentSlides?.length === 0) {
-     GenerateVideoContent(result?.data);
-    }
-  };
+  // ===============================
+  // Generate Video Content
+  // ===============================
+  const generateVideoContent = useCallback(
+    async (course: Course) => {
+      if (isGenerating) return;
 
-  const GenerateVideoContent = async (course: Course) => {
-  const chapters = Array.isArray(course?.courseLayout?.chapters)
-    ? course.courseLayout.chapters
-    : [];
+      setIsGenerating(true);
 
-  for (let i = 0; i < chapters.length; i++) {
-    if (i > 0) break; // Currently processing only the first chapter
+      const chapters = Array.isArray(course?.courseLayout?.chapters)
+        ? course.courseLayout.chapters
+        : [];
 
-    const toastLoading = toast.loading("Generating Video Content for chapter " + (i + 1));
-    
-    try {
-      const result = await axios.post("/api/generate-video-content", {
-        chapter: chapters[i], // Sending the specific chapter object
-        chapterId: chapters[i].chapterId || i.toString(), // Sending chapterId
-        courseId: courseId, // This was missing! It comes from useParams()
+      if (chapters.length === 0) return;
+
+      const toastLoading = toast.loading(
+        "Generating content for: " + chapters[0].chapterTitle,
+      );
+
+      try {
+        await axios.post("/api/generate-video-content", {
+          chapter: chapters[0],
+          chapterId: chapters[0].chapterId || "0",
+          courseId: courseId,
+        });
+
+        toast.success("Video content generated!", {
+          id: toastLoading,
+        });
+
+        // Refetch updated course data
+        await fetchCourseDetail();
+      } catch (error) {
+        console.error("Generation error:", error);
+        toast.error("Failed to generate content", {
+          id: toastLoading,
+        });
+      } finally {
+        setIsGenerating(false);
+      }
+    },
+    [courseId, isGenerating, fetchCourseDetail],
+  );
+
+  // ===============================
+  // Initial Load
+  // ===============================
+  // Inside CoursePreview component
+  const hasFetched = useRef(false);
+
+  useEffect(() => {
+    const init = async () => {
+      // Only run this logic once
+      if (hasFetched.current) return;
+
+      const data = await fetchCourseDetail();
+      if (data && data.chapterContentSlides?.length === 0) {
+        hasFetched.current = true; // Mark as called
+        await generateVideoContent(data);
+      }
+    };
+    init();
+  }, [fetchCourseDetail, generateVideoContent]);
+
+  // ===============================
+  // Calculate Audio Durations
+  // ===============================
+  useEffect(() => {
+    let cancelled = false;
+
+    const calculateAudioDurations = async () => {
+      const slides = courseDetail?.chapterContentSlides ?? [];
+
+      if (slides.length === 0) {
+        setLoading(false);
+        return;
+      }
+
+      const durationMap: Record<string, number> = {};
+
+      // Fetch audio duration for each slide
+      const promises = slides.map(async (slide) => {
+        try {
+          // Create an audio element to get duration
+          const audio = new Audio();
+
+          return new Promise<[string, number]>((resolve) => {
+            audio.addEventListener("loadedmetadata", () => {
+              // Convert seconds to frames (at 30 fps)
+              const frames = Math.max(30, Math.ceil(audio.duration * fps));
+              resolve([slide.slideId, frames]);
+            });
+
+            audio.addEventListener("error", () => {
+              console.warn(
+                `Failed to load audio for ${slide.slideId}, using default duration`,
+              );
+              // Use default 6 second (180 frames) duration on error
+              resolve([slide.slideId, Math.ceil(6 * fps)]);
+            });
+
+            // Set timeout to avoid hanging
+            const timeout = setTimeout(() => {
+              console.warn(
+                `Audio load timeout for ${slide.slideId}, using default duration`,
+              );
+              resolve([slide.slideId, Math.ceil(6 * fps)]);
+            }, 5000);
+
+            audio.addEventListener(
+              "canplaythrough",
+              () => clearTimeout(timeout),
+              { once: true },
+            );
+
+            audio.src = slide.audioFileUrl;
+            audio.load();
+          });
+        } catch (error) {
+          console.error(
+            `Error calculating duration for ${slide.slideId}:`,
+            error,
+          );
+          // Return default duration on error
+          return [slide.slideId, Math.ceil(6 * fps)] as [string, number];
+        }
       });
 
-      console.log(result.data);
-      toast.success("Video Content Generated for chapter " + (i + 1), { id: toastLoading });
-    } catch (error) {
-      console.error(error);
-      toast.error("Failed to generate content", { id: toastLoading });
-    }
+      const results = await Promise.all(promises);
+
+      if (!cancelled) {
+        results.forEach(([slideId, frames]) => {
+          durationMap[slideId] = frames;
+        });
+        setDurationBySlideId(durationMap);
+        setLoading(false);
+      }
+    };
+
+    calculateAudioDurations();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [courseDetail, fps]);
+
+  // ===============================
+  // UI
+  // ===============================
+  if (!courseDetail) {
+    return <div className="p-6">Loading course...</div>;
   }
-};
 
   return (
     <div className="flex flex-col items-center">
-      <CourseInfoCard course={courseDetail} />
-      <CourseChapter course={courseDetail} />
+      <CourseInfoCard
+        course={courseDetail}
+        durationBySlideId={durationBySlideId}
+      />
+      <CourseChapter
+        course={courseDetail}
+        durationBySlideId={durationBySlideId}
+      />
     </div>
   );
 }

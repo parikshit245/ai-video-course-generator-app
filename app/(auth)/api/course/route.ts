@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
     const courses = await db
       .select()
       .from(coursesTable)
-      .where(eq(coursesTable.courseId, courseId));
+      .where(eq(coursesTable.courseId, courseId as string));
 
     // 2. Guard clause: If course doesn't exist
     if (courses.length === 0) {
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
     const chapterContentSlide = await db
       .select()
       .from(chapterContentSlides)
-      .where(eq(chapterContentSlides.courseId, courseId));
+      .where(eq(chapterContentSlides.courseId, courseId as string));
 
     return NextResponse.json({
       ...courses[0],

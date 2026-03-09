@@ -5,7 +5,7 @@ import {
   text,
   timestamp,
   varchar,
-  customType // Import customType for Bytea
+  customType, // Import customType for Bytea
 } from "drizzle-orm/pg-core";
 
 const bytea = customType<{ data: Buffer }>({
@@ -18,7 +18,7 @@ const bytea = customType<{ data: Buffer }>({
   },
   fromDriver(value: unknown) {
     return value as Buffer;
-  }
+  },
 });
 
 export const usersTable = pgTable("users", {
@@ -41,7 +41,6 @@ export const coursesTable = pgTable("courses", {
   createdAt: timestamp().defaultNow(),
 });
 
-
 export const chapterContentSlides = pgTable("chapter_content_slides", {
   id: integer().primaryKey().generatedAlwaysAsIdentity(),
   courseId: varchar({ length: 255 })
@@ -50,9 +49,10 @@ export const chapterContentSlides = pgTable("chapter_content_slides", {
   chapterId: varchar({ length: 255 }).notNull(),
   slideId: varchar({ length: 255 }).notNull(),
   slideIndex: integer().notNull(),
-  // Use the helper here
-  audioData: bytea("audio_data"), 
+  audioFileName: varchar({ length: 255 }).notNull(),
+  audioFileUrl: varchar({ length: 1024 }).notNull(),
   narration: json().notNull(),
   html: text(),
-  revelData: json().notNull(),
+  audioData: varchar({ length: 1024 }),
+  revealData: json().notNull(),
 });

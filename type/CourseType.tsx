@@ -14,7 +14,7 @@ export type courseLayout = {
   courseDescription: string;
   level: string;
   totalChapters: number;
-  chapters: Chapter;
+  chapters: Chapter[];
 };
 
 export type Chapter = {
@@ -28,12 +28,13 @@ export type ChapterContentSlide = {
   courseId: string;
   chapterId: string;
   slideId: string;
-  slideIndex: number; 
+  slideIndex: number;
   audioFileName: string;
+  audioFileUrl: string;
   narration: {
     fullText: string;
-  }; 
+  };
   html: string;
-  revelData: string[]; 
+  audioData?: string | null;
+  revealData: string[];
 };
-

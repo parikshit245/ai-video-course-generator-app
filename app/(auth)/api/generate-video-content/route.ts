@@ -1,19 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
+import axios from "axios";
+import { db } from "@/config/db";
+import { chapterContentSlides } from "@/config/schema";
+import { Video_SlidesDummy } from "@/data/Dummy";
+import { v4 as uuidv4 } from "uuid";
 import { genAI } from "@/lib/gemini";
 import { Generate_Video_Content_Prompt } from "@/data/Prompt";
-import { Video_SlidesDummy } from "@/data/Dummy";
-import axios from "axios";
-import { db } from "@/config/db"; 
-import { chapterContentSlides } from "@/config/schema";
+import { saveAudio, getStorageType } from "@/lib/audioStorage";
+
+// ================= HELPER FUNCTIONS =================
+
+// Prevent 429 errors
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Split text under 450 chars
+const splitTextIntoChunks = (text: string, maxLength: number) => {
+  const chunks: string[] = [];
+  for (let i = 0; i < text.length; i += maxLength) {
+    chunks.push(text.slice(i, i + maxLength));
+  }
+  return chunks;
+};
+
+// ================= MAIN API =================
 
 export async function POST(req: NextRequest) {
-  // Destructure courseId and chapterId from the request body
   const { chapter, chapterId, courseId } = await req.json();
 
-  //Generate JSON schema for video content
-
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
+    model: "gemini-2.5-flash", // Using current model version
     generationConfig: {
       responseMimeType: "application/json",
       temperature: 0.3,
@@ -27,100 +42,89 @@ export async function POST(req: NextRequest) {
   );
 
   const AiResponse = response.response.text();
+
   const VideoContentJson = JSON.parse(
-    AiResponse?.replace("```json", "").replace("```", "") || "[]",
+    AiResponse?.replace("json", "").replace("", "") || "[]",
   );
 
-  //Audio File generation using TTS for Narration
-  // ---- Utility: split text safely for Fonada TTS ----
-  function splitText(text: string, maxLength = 400): string[] {
-    const sentences = text.match(/[^.!?]+[.!?]*/g) || [];
-    const chunks: string[] = [];
+  // const VideoContentJson = Video_SlidesDummy;
+  const audioFileUrls: Record<string, string> = {};
 
-    let current = "";
+  // ================= GENERATE TTS FOR ALL SLIDES =================
+  for (let i = 0; i < VideoContentJson.length; i++) {
+    const slide = VideoContentJson[i];
+    const narration = slide.narration.fullText;
 
-    for (const sentence of sentences) {
-      if ((current + sentence).length > maxLength) {
-        if (current.trim().length > 0) {
-          chunks.push(current.trim());
-        }
-        current = sentence;
-      } else {
-        current += sentence;
+    console.log(
+      `Generating audio for slide ${i + 1}/${VideoContentJson.length}: ${slide.slideId}`,
+    );
+
+    // 1️⃣ Split narration into chunks (under 450 chars each for TTS)
+    const chunks = splitTextIntoChunks(narration, 430);
+    let mergedAudioBuffer = Buffer.alloc(0);
+
+    // 2️⃣ Generate TTS for each chunk and merge
+    for (let j = 0; j < chunks.length; j++) {
+      try {
+        const fonadalabsResponse = await axios.post(
+          "https://api.fonada.ai/tts/generate-audio-large",
+          {
+            input: chunks[j],
+            voice: "Vaanee",
+            Languages: "en-US",
+          },
+          {
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${process.env.FONADALABS_API_KEY}`,
+            },
+            responseType: "arraybuffer",
+            timeout: 120000,
+          },
+        );
+
+        const audioBuffer = Buffer.from(fonadalabsResponse.data);
+        mergedAudioBuffer = Buffer.concat([mergedAudioBuffer, audioBuffer]);
+
+        // Avoid 429 rate limit errors
+        await sleep(700);
+      } catch (error) {
+        console.error(`TTS error for chunk ${j}: `, error);
+        throw error;
       }
     }
 
-    if (current.trim().length > 0) {
-      chunks.push(current.trim());
-    }
-
-    return chunks;
+    // 3️⃣ Upload merged audio to storage (local or S3)
+    const audioUrl = await saveAudio(mergedAudioBuffer, slide.audioFileName);
+    audioFileUrls[i] = audioUrl;
   }
 
+  // ================= SAVE ALL SLIDES TO DATABASE =================
+  for (let index = 0; index < VideoContentJson.length; index++) {
+    const slide = VideoContentJson[index];
 
-  // Use the dummy data provided
-  // const VideoContentJson = Video_SlidesDummy;
+    const result = await db
+      .insert(chapterContentSlides)
+      .values({
+        chapterId: chapterId,
+        courseId: courseId,
+        slideIndex: slide.slideIndex,
+        slideId: slide.slideId,
+        audioFileName: slide.audioFileName,
+        audioFileUrl: audioFileUrls[index] || "",
+        narration: slide.narration || {},
+        html: slide.html || "",
+        audioData: null, // Will be calculated on frontend from audio duration
+        revealData: slide.revealData || [],
+      })
+      .returning();
 
-for (let i = 0; i < VideoContentJson.length; i++) {
-  if(i>0) break; // Currently processing only the first slide
-    const slide = VideoContentJson[i];
-    const narrationText = slide.narration.fullText;
-
-    if (!narrationText || narrationText.length === 0) continue;
-
-    const chunks = splitText(narrationText);
-    
-    // 1. Array to hold all audio buffers for this specific slide
-    const slideAudioBuffers: Buffer[] = [];
-
-    for (let j = 0; j < chunks.length; j++) {
-      const chunk = chunks[j];
-      if (chunk.length > 450) continue;
-
-      const fonadaResult = await axios.post(
-        "https://api.fonada.ai/tts/generate-audio-large",
-        { input: chunk, voice: "vaanee", language: "English" },
-        {
-          headers: { 
-            "Content-Type": "application/json", 
-            Authorization: process.env.FONADALABS_API_KEY! 
-          },
-          responseType: "arraybuffer",
-          timeout: 120000,
-        },
-      );
-
-      // 2. Push each chunk's buffer into the array
-      slideAudioBuffers.push(Buffer.from(fonadaResult.data));
-    }
-
-    // 3. Concatenate all buffers into ONE single buffer
-    const finalSlideAudio = Buffer.concat(slideAudioBuffers);
-
-    console.log(`Slide ${i + 1} complete. Total Audio size:`, finalSlideAudio.length);
-
-    // 4. Save to Neon DB (Now called ONCE per slide)
-    await db.insert(chapterContentSlides).values({
-      courseId: courseId,
-      chapterId: chapterId,
-      slideId: slide.slideId, // No more "_chunk_j" suffix
-      slideIndex: slide.slideIndex,
-      audioData: finalSlideAudio, // Entire merged audio stored as bytea
-      narration: slide.narration,
-      revelData: { title: slide.title, subtitle: slide.subtitle }, 
-      html: slide.html,
-    });
+    console.log(`✓ Slide saved to DB: ${slide.slideId}`);
   }
 
-  //Storage audio file in cloud storage - Now handled within Neon DB
-
-  //generate captions for audio files
-
-  //save everything to db - Handled in the loop above
-
-  //return response
-  return NextResponse.json({ 
-    message: "Content and Audio saved successfully",
-    data: VideoContentJson 
+  return NextResponse.json({
+    slides: VideoContentJson,
+    audioUrls: audioFileUrls,
+    message: "Video content generated successfully",
   });
 }
